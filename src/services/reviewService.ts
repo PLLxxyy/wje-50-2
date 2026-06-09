@@ -1,5 +1,10 @@
 import type { Word, Question, QuestionType, ReviewRecord } from '../types';
 
+export interface WrongWord extends Word {
+  wrongCount: number;
+  lastWrongTime: number;
+}
+
 export function generateChoiceQuestion(word: Word, allWords: Word[]): Question {
   const otherWords = allWords.filter((w) => w.id !== word.id);
   const shuffled = [...otherWords].sort(() => Math.random() - 0.5);
@@ -85,4 +90,39 @@ export function getQuestionPrompt(question: Question): string {
     return `请写出 "${mistake}" 的正确写法:`;
   }
   return `请写出 "${question.word.pinyin}" 对应的正确写法:`;
+}
+
+export function getWrongWords(words: Word[], reviewRecords: ReviewRecord[]): WrongWord[] {
+  const wrongMap = new Map<string, { count: number; lastTime: number }>();
+
+  reviewRecords.forEach((record) => {
+    if (!record.isCorrect) {
+      const existing = wrongMap.get(record.wordId);
+      if (existing) {
+        wrongMap.set(record.wordId, {
+          count: existing.count + 1,
+          lastTime: Math.max(existing.lastTime, record.timestamp),
+        });
+      } else {
+        wrongMap.set(record.wordId, {
+          count: 1,
+          lastTime: record.timestamp,
+        });
+      }
+    }
+  });
+
+  const wrongWords: WrongWord[] = [];
+  wrongMap.forEach((data, wordId) => {
+    const word = words.find((w) => w.id === wordId);
+    if (word) {
+      wrongWords.push({
+        ...word,
+        wrongCount: data.count,
+        lastWrongTime: data.lastTime,
+      });
+    }
+  });
+
+  return wrongWords.sort((a, b) => b.wrongCount - a.wrongCount || b.lastWrongTime - a.lastWrongTime);
 }

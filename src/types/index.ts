@@ -31,6 +31,8 @@ export interface AppState {
 
 export type QuestionType = 'choice' | 'fill';
 
+export type ReviewMode = 'normal' | 'wrong';
+
 export interface Question {
   word: Word;
   type: QuestionType;

@@ -2,7 +2,9 @@ import { create } from 'zustand';
 import type { Word, Group, ReviewRecord, Question, QuestionType, ReviewSession, ImportResult } from '../types';
 import { loadFromStorage, saveToStorage, clearStorage, STORAGE_KEYS } from '../services/storage';
 import { createWord, validateWord, searchWords, getWordsByGroup, getRandomWords, importWords as importWordsService, exportToJSON, exportToText, getGroupStats, getReviewStats } from '../services/wordService';
-import { generateQuestions, checkAnswer, createReviewRecord, updateWordStats } from '../services/reviewService';
+import { generateQuestions, checkAnswer, createReviewRecord, updateWordStats, getWrongWords } from '../services/reviewService';
+import type { WrongWord } from '../services/reviewService';
+import type { ReviewMode } from '../types';
 import { defaultGroups, sampleWords } from '../data/initialData';
 
 interface AppStore {
@@ -19,10 +21,14 @@ interface AppStore {
   searchWords: (keyword: string) => Word[];
   getWordsByGroup: (groupId: string) => Word[];
 
-  startReview: (count: number, type: QuestionType, groupId?: string) => void;
+  startReview: (count: number, type: QuestionType, groupId?: string, mode?: ReviewMode) => void;
   answerQuestion: (answer: string) => void;
   nextQuestion: () => void;
   resetReview: () => void;
+
+  getWrongWords: () => WrongWord[];
+  clearWrongRecord: (wordId: string) => void;
+  clearAllWrongRecords: () => void;
 
   importWords: (data: unknown) => ImportResult;
   exportJSON: () => string;
@@ -117,12 +123,17 @@ export const useStore = create<AppStore>((set, get) => ({
     return getWordsByGroup(get().words, groupId);
   },
 
-  startReview: (count, type, groupId) => {
-    const { words } = get();
+  startReview: (count, type, groupId, mode = 'normal') => {
+    const { words, reviewRecords } = get();
     let pool = words;
-    if (groupId && groupId !== 'all') {
+    
+    if (mode === 'wrong') {
+      const wrongWords = getWrongWords(words, reviewRecords);
+      pool = wrongWords as Word[];
+    } else if (groupId && groupId !== 'all') {
       pool = words.filter((w) => w.groupId === groupId);
     }
+    
     if (pool.length === 0) {
       return;
     }
@@ -248,5 +259,26 @@ export const useStore = create<AppStore>((set, get) => ({
 
   getReviewStats: () => {
     return getReviewStats(get().words);
+  },
+
+  getWrongWords: () => {
+    const { words, reviewRecords } = get();
+    return getWrongWords(words, reviewRecords);
+  },
+
+  clearWrongRecord: (wordId) => {
+    set((state) => {
+      const reviewRecords = state.reviewRecords.filter((r) => r.wordId !== wordId || r.isCorrect);
+      saveToStorage(STORAGE_KEYS.REVIEW_RECORDS, reviewRecords);
+      return { reviewRecords };
+    });
+  },
+
+  clearAllWrongRecords: () => {
+    set((state) => {
+      const reviewRecords = state.reviewRecords.filter((r) => r.isCorrect);
+      saveToStorage(STORAGE_KEYS.REVIEW_RECORDS, reviewRecords);
+      return { reviewRecords };
+    });
   },
 }));

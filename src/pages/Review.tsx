@@ -1,17 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, RotateCcw, CheckCircle, XCircle, ChevronRight, Brain, ListChecks, Edit3 } from 'lucide-react';
+import { Play, RotateCcw, CheckCircle, XCircle, ChevronRight, Brain, ListChecks, Edit3, BookX, Trash2, BookOpen } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { getQuestionPrompt, getMistakeHint } from '../services/reviewService';
-import type { QuestionType, Word } from '../types';
+import type { QuestionType, Word, ReviewMode } from '../types';
+import type { WrongWord } from '../services/reviewService';
 
 export default function Review() {
-  const { words, groups, startReview, reviewSession, answerQuestion, nextQuestion, resetReview } = useStore();
+  const { words, groups, startReview, reviewSession, answerQuestion, nextQuestion, resetReview, getWrongWords, clearWrongRecord, clearAllWrongRecords } = useStore();
+  const [reviewMode, setReviewMode] = useState<ReviewMode>('normal');
   const [questionType, setQuestionType] = useState<QuestionType>('choice');
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [questionCount, setQuestionCount] = useState(10);
   const [fillAnswer, setFillAnswer] = useState('');
   const [showHint, setShowHint] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState<string | null>(null);
   const fillInputRef = useRef<HTMLInputElement>(null);
+
+  const wrongWords = getWrongWords();
 
   const currentQuestion = reviewSession?.questions[reviewSession.currentIndex];
   const isAnswered = currentQuestion?.isCorrect !== undefined;
@@ -23,7 +28,16 @@ export default function Review() {
   }, [currentQuestion, isAnswered]);
 
   const handleStart = () => {
-    startReview(questionCount, questionType, selectedGroup);
+    startReview(questionCount, questionType, selectedGroup, reviewMode);
+  };
+
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('zh-CN', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const handleChoiceAnswer = (option: string) => {
@@ -85,6 +99,152 @@ export default function Review() {
 
         <div className="card space-y-6">
           <div>
+            <label className="label">复习模式</label>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => setReviewMode('normal')}
+                className={`p-4 rounded-xl border-2 transition-all text-left ${
+                  reviewMode === 'normal'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    reviewMode === 'normal' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    <BookOpen size={20} />
+                  </div>
+                  <div>
+                    <div className="font-medium text-primary">全部复习</div>
+                    <div className="text-sm text-gray-500">从所有词条中随机抽取</div>
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => setReviewMode('wrong')}
+                className={`p-4 rounded-xl border-2 transition-all text-left relative ${
+                  reviewMode === 'wrong'
+                    ? 'border-warning bg-warning/5'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {wrongWords.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-warning text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                    {wrongWords.length}
+                  </span>
+                )}
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    reviewMode === 'wrong' ? 'bg-warning text-white' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    <BookX size={20} />
+                  </div>
+                  <div>
+                    <div className="font-medium text-primary">错题本</div>
+                    <div className="text-sm text-gray-500">仅练习答错过的词条</div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {reviewMode === 'wrong' && wrongWords.length > 0 && (
+            <div className="border border-warning/20 rounded-xl p-4 bg-warning/5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-primary flex items-center gap-2">
+                  <BookX size={18} className="text-warning" />
+                  错题列表 ({wrongWords.length})
+                </h3>
+                <button
+                  onClick={() => setShowClearConfirm('all')}
+                  className="text-sm text-gray-400 hover:text-warning transition-colors flex items-center gap-1"
+                >
+                  <Trash2 size={14} />
+                  清空
+                </button>
+              </div>
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                {wrongWords.map((word: WrongWord) => {
+                  const group = getGroup(word.groupId);
+                  return (
+                    <div
+                      key={word.id}
+                      className="bg-white rounded-lg p-3 flex items-center justify-between border border-gray-100"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xl flex-shrink-0">{group?.icon}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-primary">{word.correct}</span>
+                            <span className="text-xs bg-warning/20 text-warning px-2 py-0.5 rounded-full">
+                              错 {word.wrongCount} 次
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-400 font-mono truncate">
+                            {word.pinyin} · {formatDate(word.lastWrongTime)}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowClearConfirm(word.id)}
+                        className="text-gray-300 hover:text-warning transition-colors p-1 flex-shrink-0"
+                        title="移出错题本"
+                      >
+                        <XCircle size={16} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {reviewMode === 'wrong' && wrongWords.length === 0 && (
+            <div className="text-center py-8 text-gray-400">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <CheckCircle size={32} />
+              </div>
+              <p>太棒了！暂无错题记录</p>
+              <p className="text-sm">继续保持，错题会自动收集到这里</p>
+            </div>
+          )}
+
+          {showClearConfirm && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl animate-fade-in">
+                <h3 className="text-lg font-bold text-primary mb-2">确认删除</h3>
+                <p className="text-gray-500 mb-6">
+                  {showClearConfirm === 'all'
+                    ? '确定要清空所有错题记录吗？此操作不可恢复。'
+                    : '确定要将该词条移出错题本吗？'}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowClearConfirm(null)}
+                    className="flex-1 py-2 rounded-xl border border-gray-200 text-gray-600 font-medium"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (showClearConfirm === 'all') {
+                        clearAllWrongRecords();
+                      } else {
+                        clearWrongRecord(showClearConfirm);
+                      }
+                      setShowClearConfirm(null);
+                    }}
+                    className="flex-1 py-2 rounded-xl bg-warning text-white font-medium"
+                  >
+                    确认
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div>
             <label className="label">题型选择</label>
             <div className="grid grid-cols-2 gap-4">
               <button
@@ -130,48 +290,52 @@ export default function Review() {
             </div>
           </div>
 
-          <div>
-            <label className="label">选择分组</label>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setSelectedGroup('all')}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all min-h-[40px] ${
-                  selectedGroup === 'all'
-                    ? 'bg-primary text-white'
-                    : 'bg-white text-primary hover:bg-primary/10 border border-gray-200'
-                }`}
-              >
-                全部 ({words.length})
-              </button>
-              {groupWordCounts.map((group) => (
+          {reviewMode === 'normal' && (
+            <div>
+              <label className="label">选择分组</label>
+              <div className="flex flex-wrap gap-2">
                 <button
-                  key={group.id}
-                  onClick={() => setSelectedGroup(group.id)}
-                  disabled={group.count === 0}
+                  onClick={() => setSelectedGroup('all')}
                   className={`px-4 py-2 rounded-full text-sm font-medium transition-all min-h-[40px] ${
-                    selectedGroup === group.id
-                      ? 'text-white'
-                      : group.count === 0
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    selectedGroup === 'all'
+                      ? 'bg-primary text-white'
                       : 'bg-white text-primary hover:bg-primary/10 border border-gray-200'
                   }`}
-                  style={{
-                    backgroundColor: selectedGroup === group.id ? group.color : undefined,
-                  }}
                 >
-                  {group.icon} {group.name} ({group.count})
+                  全部 ({words.length})
                 </button>
-              ))}
+                {groupWordCounts.map((group) => (
+                  <button
+                    key={group.id}
+                    onClick={() => setSelectedGroup(group.id)}
+                    disabled={group.count === 0}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all min-h-[40px] ${
+                      selectedGroup === group.id
+                        ? 'text-white'
+                        : group.count === 0
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white text-primary hover:bg-primary/10 border border-gray-200'
+                    }`}
+                    style={{
+                      backgroundColor: selectedGroup === group.id ? group.color : undefined,
+                    }}
+                  >
+                    {group.icon} {group.name} ({group.count})
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div>
             <label className="label">题目数量</label>
             <div className="flex gap-3">
               {[5, 10, 20, 30].map((count) => {
-                const availableCount = selectedGroup === 'all'
-                  ? words.length
-                  : words.filter((w) => w.groupId === selectedGroup).length;
+                const availableCount = reviewMode === 'wrong'
+                  ? wrongWords.length
+                  : selectedGroup === 'all'
+                    ? words.length
+                    : words.filter((w) => w.groupId === selectedGroup).length;
                 const isDisabled = count > availableCount;
                 return (
                   <button
@@ -180,7 +344,9 @@ export default function Review() {
                     disabled={isDisabled}
                     className={`flex-1 py-3 rounded-xl font-medium transition-all min-h-[44px] ${
                       questionCount === count
-                        ? 'bg-primary text-white'
+                        ? reviewMode === 'wrong'
+                          ? 'bg-warning text-white'
+                          : 'bg-primary text-white'
                         : isDisabled
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         : 'bg-white border border-gray-200 text-primary hover:border-primary'
@@ -195,8 +361,15 @@ export default function Review() {
 
           <button
             onClick={handleStart}
-            disabled={words.length === 0 || (selectedGroup !== 'all' && words.filter((w) => w.groupId === selectedGroup).length === 0)}
-            className="btn-accent w-full text-lg py-4"
+            disabled={
+              (reviewMode === 'normal' && (words.length === 0 || (selectedGroup !== 'all' && words.filter((w) => w.groupId === selectedGroup).length === 0))) ||
+              (reviewMode === 'wrong' && wrongWords.length === 0)
+            }
+            className={`w-full text-lg py-4 flex items-center justify-center gap-2 rounded-xl font-semibold transition-all min-h-[56px] ${
+              reviewMode === 'wrong'
+                ? 'bg-warning hover:bg-warning/90 text-white shadow-lg shadow-warning/30'
+                : 'btn-accent'
+            }`}
           >
             <Play size={20} />
             开始复习
